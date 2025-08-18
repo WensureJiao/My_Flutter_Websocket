@@ -1,28 +1,30 @@
 import 'package:flutter/material.dart';
-import 'WebSocket/ws_service.dart';
+import 'WebSocket/ws_service.dart'; // 引入你之前写的 WebSocketService
 
 void main() {
-  runApp(MaterialApp(home: WebSocketPage()));
+  runApp(MaterialApp(home: WebSocketDemoPage()));
 }
 
-class WebSocketPage extends StatefulWidget {
-  const WebSocketPage({Key? key}) : super(key: key);
+class WebSocketDemoPage extends StatefulWidget {
+  const WebSocketDemoPage({Key? key}) : super(key: key);
 
   @override
-  State<WebSocketPage> createState() => _WebSocketPageState();
+  State<WebSocketDemoPage> createState() => _WebSocketDemoPageState();
 }
 
-class _WebSocketPageState extends State<WebSocketPage> {
+class _WebSocketDemoPageState extends State<WebSocketDemoPage> {
   final wsService = WebSocketService("wss://wss.woox.io/v3/public?device=web");
-  List<Map<String, dynamic>> messages = [];
   bool connected = false;
+  List<Map<String, dynamic>> messages = [];
 
   @override
   void initState() {
     super.initState();
+
+    // 监听 WebSocket 推送
     wsService.stream.listen((data) {
       setState(() {
-        messages.insert(0, data);
+        messages.insert(0, data); // 最新消息插入到最前
       });
     });
   }
@@ -36,7 +38,7 @@ class _WebSocketPageState extends State<WebSocketPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("WebSocket Demo")),
+      appBar: AppBar(title: const Text("WebSocket Demo")),
       body: Column(
         children: [
           Wrap(
@@ -49,7 +51,7 @@ class _WebSocketPageState extends State<WebSocketPage> {
                         await wsService.connect();
                         setState(() => connected = true);
                       },
-                child: Text("Connect"),
+                child: const Text("Connect"),
               ),
               ElevatedButton(
                 onPressed: connected
@@ -58,7 +60,7 @@ class _WebSocketPageState extends State<WebSocketPage> {
                         setState(() => connected = false);
                       }
                     : null,
-                child: Text("Disconnect"),
+                child: const Text("Disconnect"),
               ),
               ElevatedButton(
                 onPressed: connected
@@ -66,7 +68,7 @@ class _WebSocketPageState extends State<WebSocketPage> {
                         wsService.subscribe(["indexprices"]);
                       }
                     : null,
-                child: Text("Subscribe"),
+                child: const Text("Subscribe"),
               ),
               ElevatedButton(
                 onPressed: connected
@@ -74,20 +76,44 @@ class _WebSocketPageState extends State<WebSocketPage> {
                         wsService.unsubscribe(["indexprices"]);
                       }
                     : null,
-                child: Text("Unsubscribe"),
+                child: const Text("Unsubscribe"),
               ),
             ],
           ),
-          Divider(), //分割线
+          const Divider(),
           Expanded(
-            //消息列表，占满剩余空间
-            child: ListView.builder(
-              reverse: true,
-              itemCount: messages.length,
-              itemBuilder: (_, index) {
-                return ListTile(title: Text(messages[index].toString()));
-              },
-            ),
+            child: messages.isEmpty
+                ? const Center(child: Text("暂无数据"))
+                : ListView.builder(
+                    reverse: true,
+                    itemCount: messages.length,
+                    itemBuilder: (_, index) {
+                      final msg = messages[index];
+                      if (msg["topic"] == "indexprices") {
+                        // 格式化 indexprices 数据
+                        final dataList = msg["data"] as List<dynamic>;
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 8,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: dataList.map((item) {
+                                return Text(
+                                  "${item['s']} -> ${item['px']} (ts:${item['ts']})",
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        );
+                      } else {
+                        return ListTile(title: Text(msg.toString()));
+                      }
+                    },
+                  ),
           ),
         ],
       ),
