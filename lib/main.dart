@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'WebSocket/ws_service.dart'; // 引入你之前写的 WebSocketService
+import 'websocket/ws_service.dart'; // 引入你之前写的 WebSocketService
+import 'widgets/message_list.dart';
+import 'widgets/websocet_controls.dart';
 
 void main() {
   runApp(MaterialApp(home: WebSocketDemoPage()));
@@ -41,80 +43,21 @@ class _WebSocketDemoPageState extends State<WebSocketDemoPage> {
       appBar: AppBar(title: const Text("WebSocket Demo")),
       body: Column(
         children: [
-          Wrap(
-            spacing: 10,
-            children: [
-              ElevatedButton(
-                onPressed: connected
-                    ? null
-                    : () async {
-                        await wsService.connect();
-                        setState(() => connected = true);
-                      },
-                child: const Text("Connect"),
-              ),
-              ElevatedButton(
-                onPressed: connected
-                    ? () {
-                        wsService.disconnect();
-                        setState(() => connected = false);
-                      }
-                    : null,
-                child: const Text("Disconnect"),
-              ),
-              ElevatedButton(
-                onPressed: connected
-                    ? () {
-                        wsService.subscribe(["indexprices"]);
-                      }
-                    : null,
-                child: const Text("Subscribe"),
-              ),
-              ElevatedButton(
-                onPressed: connected
-                    ? () {
-                        wsService.unsubscribe(["indexprices"]);
-                      }
-                    : null,
-                child: const Text("Unsubscribe"),
-              ),
-            ],
+          WebSocketControls(
+            connected: connected,
+            onConnect: () async {
+              await wsService.connect();
+              setState(() => connected = true);
+            },
+            onDisconnect: () {
+              wsService.disconnect();
+              setState(() => connected = false);
+            },
+            onSubscribe: () => wsService.subscribe(["indexprices"]),
+            onUnsubscribe: () => wsService.unsubscribe(["indexprices"]),
           ),
           const Divider(),
-          Expanded(
-            child: messages.isEmpty
-                ? const Center(child: Text("暂无数据"))
-                : ListView.builder(
-                    reverse: true,
-                    itemCount: messages.length,
-                    itemBuilder: (_, index) {
-                      final msg = messages[index];
-                      if (msg["topic"] == "indexprices") {
-                        // 格式化 indexprices 数据
-                        final dataList = msg["data"] as List<dynamic>;
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 8,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: dataList.map((item) {
-                                return Text(
-                                  "${item['s']} -> ${item['px']} (ts:${item['ts']})",
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        );
-                      } else {
-                        return ListTile(title: Text(msg.toString()));
-                      }
-                    },
-                  ),
-          ),
+          Expanded(child: MessageListView(messages: messages)),
         ],
       ),
     );
