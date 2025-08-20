@@ -10,76 +10,72 @@ class WebSocketService {
   final StreamController<Map<String, dynamic>> _streamController =
       StreamController.broadcast();
 
-  late final ReconnectManager _reconnectManager; // 断线重连管理器
+  final List<String> _pendingTopics = []; // 保存订阅主题
+
+  Timer? _pingTimer;
+  final Duration pingTimeout = const Duration(seconds: 10);
+
+  late final ReconnectManager _reconnectManager;
 
   WebSocketService(this.url) {
-    // 初始化断线重连管理器
     _reconnectManager = ReconnectManager(
-      reconnectCallback: _connectInternal, // 自动重连时调用
+      reconnectCallback: _connectInternal,
       onReconnectFail: () {
         print("多次重连失败，放弃重连");
       },
     );
   }
 
-  /// 对外暴露 stream，用于 UI 层监听
   Stream<Map<String, dynamic>> get stream => _streamController.stream;
 
-  /// 手动连接 WebSocket
-  Future<void> connect() async {
-    await _connectInternal();
-  }
+  /// 手动连接
+  Future<void> connect() async => await _connectInternal();
 
-  /// 内部连接逻辑，ReconnectManager 会调用
+  /// 内部连接逻辑
   Future<void> _connectInternal() async {
     try {
       _socket = await WebSocket.connect(Uri.parse(url));
       print("WebSocket 已连接: $url");
 
-      // 连接成功后重置重连状态
       _reconnectManager.reset();
+      _pingTimer?.cancel();
 
-      // 开始监听事件（复用 WSEventHandler）
       WSEventHandler.listenEvents(
         socket: _socket!,
-        onMessage: (data) {
-          _streamController.add(data); // 收到消息直接推给 UI
-        },
-        onClose: (code, reason) {
-          print("连接关闭 code=$code, reason=$reason");
-          _reconnectManager.scheduleReconnect(); // 触发重连
-        },
-        onError: (error) {
-          print("WebSocket 错误: $error");
-          _reconnectManager.scheduleReconnect(); // 触发重连
-        },
+        onMessage: (data) => _streamController.add(data),
+        onClose: (code, reason) => _reconnectManager.scheduleReconnect(),
+        onError: (_) => _reconnectManager.scheduleReconnect(),
+        onPingTimeout: () => _reconnectManager.scheduleReconnect(), // 直接触发重连
+        pingTimeout: const Duration(seconds: 15),
       );
+
+      // 重连成功后恢复订阅
+      if (_pendingTopics.isNotEmpty) subscribe(_pendingTopics);
     } catch (e) {
       print("连接失败: $e");
-      _reconnectManager.scheduleReconnect(); // 连接失败也触发重连
+      _reconnectManager.scheduleReconnect();
     }
   }
 
-  /// 主动断开连接
   void disconnect() {
+    _pingTimer?.cancel();
     _socket?.close();
     _socket = null;
-    _reconnectManager.stop(); // 停止自动重连
+    _reconnectManager.stop();
   }
 
-  /// 订阅主题（复用 WSCommand）
   void subscribe(List<String> topics) {
     if (_socket == null) return;
+    _pendingTopics.addAll(topics.where((t) => !_pendingTopics.contains(t)));
     _socket?.sendText(WSCommand.subscribe(topics));
   }
 
-  /// 退订主题（复用 WSCommand）
   void unsubscribe(List<String> topics) {
     if (_socket == null) return;
+    _pendingTopics.removeWhere((t) => topics.contains(t));
     _socket?.sendText(WSCommand.unsubscribe(topics));
   }
 
-  /// 资源释放
   void dispose() {
     _streamController.close();
     disconnect();

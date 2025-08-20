@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket/web_socket.dart';
 
 typedef MessageCallback = void Function(Map<String, dynamic> data);
 typedef CloseCallback = void Function(int code, String reason);
 typedef ErrorCallback = void Function(Object error);
+typedef PingTimeoutCallback = void Function();
 
 /// WebSocket 默认值常量
 class WSConst {
@@ -25,7 +27,23 @@ class WSEventHandler {
     required MessageCallback onMessage,
     CloseCallback? onClose,
     ErrorCallback? onError,
+    PingTimeoutCallback? onPingTimeout, // 可选 ping 超时回调
+    Duration pingTimeout = const Duration(seconds: 10), // 默认 ping 超时  时间
   }) {
+    Timer? pingTimer; // 定时器用于处理 ping 超时
+
+    void resetPingTimer() {
+      // 重置 ping 定时器
+      pingTimer?.cancel();
+      pingTimer = Timer(pingTimeout, () {
+        print("未收到 ping，触发 pingTimeout");
+        onPingTimeout?.call(); // 触发 ping 超时回调
+      });
+    }
+
+    // 初始化 ping 定时器
+    resetPingTimer();
+
     socket.events.listen(
       (event) {
         if (event is TextDataReceived) {
@@ -34,6 +52,7 @@ class WSEventHandler {
           // 处理 ping
           if (data['ping'] != null) {
             socket.sendText(json.encode({"pong": data['ping']}));
+            resetPingTimer(); // 收到 ping 重置定时器
             return;
           }
 
@@ -41,26 +60,20 @@ class WSEventHandler {
         } else if (event is BinaryDataReceived) {
           print('收到二进制数据: ${event.data}');
         } else if (event is CloseReceived) {
-          // 使用常量代替硬编码
           final code = event.code ?? WSConst.defaultCloseCode;
           final reason = event.reason;
-
           print('WebSocket closed: code=$code, reason=$reason');
-
-          if (onClose != null) {
-            onClose(code, reason);
-          }
+          onClose?.call(code, reason);
         }
       },
       onError: (error) {
         print("WebSocket error: $error");
-        if (onError != null) {
-          onError(error);
-        }
+        onError?.call(error);
       },
       onDone: () {
-        print("WebSocket 已关闭（done 回调）");
-        // done 回调也可以触发 onClose，如果需要
+        print("WebSocket done 回调触发");
+        // done 回调也可能表示连接关闭
+        onClose?.call(WSConst.defaultCloseCode, WSConst.defaultCloseReason);
       },
     );
   }
